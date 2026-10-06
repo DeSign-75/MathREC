@@ -101,3 +101,21 @@ export function sweepSfx() {
   if (!ensure()) return;
   tone({ freq: 180, end: 1400, dur: 0.5, type: "sawtooth", vol: 0.07 });
 }
+
+/** Kabooom detonation — noise burst + sub sweep. */
+export function explodeSfx() {
+  if (!ensure()) return;
+  const t = ctx!.currentTime;
+  tone({ freq: 120, end: 28, dur: 0.7, type: "sawtooth", vol: 0.2 });
+  const len = Math.floor(ctx!.sampleRate * 0.5);
+  const buf = ctx!.createBuffer(1, len, ctx!.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / len);
+  const src = ctx!.createBufferSource();
+  src.buffer = buf;
+  const g = ctx!.createGain();
+  g.gain.value = 0.25;
+  src.connect(g);
+  g.connect(master!);
+  src.start(t);
+}
