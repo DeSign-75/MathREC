@@ -8,6 +8,10 @@ export interface DifficultyConfig {
   allowMixed: boolean;
   description: string;
   timeLimit: number; // seconds per question
+  multiplier: number; // score multiplier
+  operators: string;
+  range: string;
+  cadence: string;
 }
 
 export const DIFFICULTIES: Record<Difficulty, DifficultyConfig> = {
@@ -19,6 +23,10 @@ export const DIFFICULTIES: Record<Difficulty, DifficultyConfig> = {
     allowMixed: false,
     description: "+  −  small numbers",
     timeLimit: 15,
+    multiplier: 1.0,
+    operators: "Addition & Subtraction (+ −)",
+    range: "Small integers [ 1 − 20 ]",
+    cadence: "Relaxed pace, low penalty hazard",
   },
   medium: {
     label: "MEDIUM",
@@ -28,6 +36,10 @@ export const DIFFICULTIES: Record<Difficulty, DifficultyConfig> = {
     allowMixed: false,
     description: "+  −  ×  ÷",
     timeLimit: 10,
+    multiplier: 1.75,
+    operators: "4 Operations (+ − × ÷)",
+    range: "Standard two-digit integers [ 10 − 99 ]",
+    cadence: "Standard tempo, balanced pressure",
   },
   hard: {
     label: "HARD",
@@ -37,6 +49,10 @@ export const DIFFICULTIES: Record<Difficulty, DifficultyConfig> = {
     allowMixed: true,
     description: "mixed + big numbers",
     timeLimit: 7,
+    multiplier: 2.5,
+    operators: "Complex & Mixed ( ) + − × ÷",
+    range: "High-magnitude multi-digit challenges",
+    cadence: "Reflex overdrive, rapid timeout danger",
   },
 };
 

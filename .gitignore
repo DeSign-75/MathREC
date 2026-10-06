@@ -3,3 +3,5 @@ node_modules
 out
 *.log
 .DS_Store
+# Local design reference material (mockups + spec)
+/mathrec_web_game_redesign

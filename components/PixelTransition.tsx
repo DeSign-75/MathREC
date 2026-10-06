@@ -13,7 +13,7 @@ export default function PixelTransition() {
       cells.push(
         <span
           key={`${r}-${c}`}
-          className="pixel-cell bg-white"
+          className="pixel-cell bg-cyber-cyan shadow-[0_0_18px_rgba(0,240,255,0.7)]"
           style={{ animationDelay: `${dist * 30}ms` }}
         />
       );
