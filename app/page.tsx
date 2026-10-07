@@ -405,7 +405,7 @@ export default function Home() {
   const isNewBest = score > runBest && score > 0;
 
   return (
-    <main className="grid-bg relative min-h-screen bg-void font-tech text-white">
+    <main className="grid-bg relative min-h-screen overflow-x-hidden bg-void font-tech text-white [touch-action:manipulation]">
       <div className="scanlines pointer-events-none fixed inset-0 z-30 opacity-60" />
       <div className="vignette pointer-events-none fixed inset-0 z-30" />
       {/* HUD corner reticles */}
@@ -414,7 +414,7 @@ export default function Home() {
       <div className="pointer-events-none fixed bottom-4 left-4 z-30 h-8 w-8 border-b-2 border-l-2 border-cyber-cyan/60" />
       <div className="pointer-events-none fixed bottom-4 right-4 z-30 h-8 w-8 border-b-2 border-r-2 border-cyber-cyan/60" />
 
-      <div className="relative z-20 mx-auto flex min-h-screen w-full max-w-5xl flex-col px-4 py-4 md:px-6 md:py-5">
+      <div className="relative z-20 mx-auto flex min-h-screen w-full max-w-5xl flex-col px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4 md:px-6 md:py-5">
         {/* ===== TITLE ===== */}
         {screen === "title" && (
           <>
@@ -442,19 +442,19 @@ export default function Home() {
               </div>
             </header>
 
-            <section className="animate-pop relative flex flex-1 flex-col items-center justify-center py-10 text-center">
-              <div className="animate-pulse-aura pointer-events-none absolute left-1/2 top-1/2 h-[350px] w-[650px] max-w-full rounded-full bg-cyber-cyan/15 blur-[110px]" />
+            <section className="animate-pop relative flex flex-1 flex-col items-center justify-center py-6 text-center md:py-10">
+              <div className="hero-halo animate-pulse-aura pointer-events-none absolute left-1/2 top-1/2 h-[350px] w-[650px] max-w-full rounded-full bg-cyber-cyan/15 blur-[110px]" />
               <div className="relative rounded-full border border-cyber-cyan/40 bg-cyber-cyan/10 px-5 py-1.5 font-mono text-xs tracking-[0.3em] text-cyber-cyan">
                 NEURAL SPEED ARITHMETIC ENGINE
               </div>
-              <h1 className="relative mt-6 font-display text-7xl font-black tracking-wide md:text-8xl">
+              <h1 className="hero-title relative mt-6 font-display text-5xl font-black tracking-wide sm:text-7xl md:text-8xl">
                 <span className="text-glow-white text-white">Math</span>
                 <span className="text-glow-cyan text-cyber-cyan">REC</span>
               </h1>
-              <p className="relative mt-4 font-mono text-sm tracking-[0.4em] text-gray-400">
+              <p className="hero-sub relative mt-4 font-mono text-xs tracking-[0.4em] text-gray-400 sm:text-sm">
                 [ DARK CIRCUIT EDITION ]
               </p>
-              <div className="relative mt-6 flex flex-wrap items-center justify-center gap-3 font-mono text-sm tracking-[0.2em]">
+              <div className="hero-sub relative mt-6 flex flex-wrap items-center justify-center gap-3 font-mono text-xs tracking-[0.2em] sm:text-sm">
                 <span className="rounded border border-cyber-border bg-cyber-surface/80 px-3 py-1 text-cyber-cyan">
                   5 MODES
                 </span>
@@ -467,7 +467,7 @@ export default function Home() {
               </div>
               <button
                 onClick={() => goWithTransition("modes")}
-                className="relative mt-10 flex items-center gap-3 rounded-xl border border-cyber-cyan bg-white px-12 py-4 font-display text-xl font-bold tracking-[0.25em] text-black transition hover:shadow-[0_0_35px_rgba(0,240,255,0.55)] active:scale-95"
+                className="hero-cta relative mt-8 flex items-center gap-3 rounded-xl border border-cyber-cyan bg-white px-8 py-4 font-display text-lg font-bold tracking-[0.25em] text-black transition hover:shadow-[0_0_35px_rgba(0,240,255,0.55)] active:scale-95 sm:mt-10 sm:px-12 sm:text-xl"
                 style={{ boxShadow: "0 0 24px rgba(0,240,255,0.45)" }}
               >
                 ▶ START GAME
@@ -536,7 +536,7 @@ export default function Home() {
               <p className="text-center font-mono text-sm tracking-[0.45em] text-cyber-cyan/80">
                 TACTICAL ARITHMETIC SIMULATION
               </p>
-              <h2 className="text-glow-white mt-2 text-center font-display text-4xl font-black tracking-wider text-white md:text-5xl">
+              <h2 className="text-glow-white mt-2 text-center font-display text-3xl font-black tracking-wider text-white sm:text-4xl md:text-5xl">
                 DEPLOY EXECUTION VECTOR
               </h2>
               <div className="mt-8 grid gap-4 md:grid-cols-2">
@@ -547,7 +547,7 @@ export default function Home() {
                     <button
                       key={m}
                       onClick={() => startGame(m)}
-                      className={`group rounded-xl border-2 bg-cyber-surface/90 p-6 text-left transition ${
+                      className={`group rounded-xl border-2 bg-cyber-surface/90 p-5 text-left transition md:p-6 ${
                         primary
                           ? "border-cyber-cyan shadow-glowcyan hover:shadow-[0_0_35px_rgba(0,240,255,0.4)]"
                           : "border-cyber-border/80 hover:border-cyber-cyan/60 hover:shadow-glowcyan"
@@ -557,11 +557,11 @@ export default function Home() {
                         <span className="flex items-center gap-2 rounded border border-cyber-cyan/60 bg-cyber-cyan/10 px-2.5 py-1 font-mono text-xs tracking-[0.2em] text-cyber-cyan">
                           {c.tag} <span className="inline-block h-2 w-2 rounded-full bg-mint" />
                         </span>
-                        <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-cyber-cyan font-mono text-sm font-bold text-black shadow-glowcyan transition group-hover:scale-110">
+                        <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-cyber-cyan font-mono text-xs font-bold text-black shadow-glowcyan transition group-hover:scale-110 md:h-10 md:w-10 md:text-sm">
                           {i + 1}▶
                         </span>
                       </div>
-                      <p className="mt-5 font-display text-3xl font-bold tracking-wider text-white">{c.label}</p>
+                      <p className="mt-4 font-display text-2xl font-bold tracking-wider text-white md:mt-5 md:text-3xl">{c.label}</p>
                       <p className="mt-1 font-tech text-base text-gray-300">{c.description}</p>
                       <p className="mt-2 font-mono text-xs tracking-wider">
                         <span className="text-cyber-cyan">{c.params}</span>
@@ -593,26 +593,26 @@ export default function Home() {
         {/* ===== PLAYING ===== */}
         {screen === "playing" && question && (
           <>
-            <header className="flex flex-col gap-3 border-b border-cyber-border/70 pb-3 md:flex-row md:items-center md:justify-between">
-              <div className="flex items-center justify-between gap-3 md:justify-start">
-                <div className="flex items-center gap-2 rounded-lg border border-cyber-cyan/40 bg-cyber-surface/90 px-3.5 py-1.5 shadow-glowcyan">
-                  <span className="h-2.5 w-2.5 animate-ping rounded-full bg-cyber-cyan" />
-                  <span className="font-display text-xl font-black tracking-widest text-white">
+            <header className="sticky top-0 z-40 -mx-4 flex flex-col gap-2 border-b border-cyber-border/70 bg-void/85 px-4 pb-3 pt-4 backdrop-blur-md sm:gap-3 md:-mx-6 md:flex-row md:items-center md:justify-between md:px-6">
+              <div className="flex items-center justify-between gap-2 md:justify-start md:gap-3">
+                <div className="flex items-center gap-2 rounded-lg border border-cyber-cyan/40 bg-cyber-surface/90 px-2.5 py-1 shadow-glowcyan sm:px-3.5 sm:py-1.5">
+                  <span className="h-2 w-2 animate-ping rounded-full bg-cyber-cyan sm:h-2.5 sm:w-2.5" />
+                  <span className="font-display text-base font-black tracking-widest text-white sm:text-xl">
                     Math<span className="text-cyber-cyan">REC</span>
                   </span>
                 </div>
-                <div className="rounded border border-crimson/50 bg-crimson/10 px-3 py-1.5 font-mono text-xs font-bold tracking-wider text-crimson">
+                <div className="rounded border border-crimson/50 bg-crimson/10 px-2 py-1 font-mono text-[10px] font-bold tracking-wider text-crimson sm:px-3 sm:py-1.5 sm:text-xs">
                   PROTOCOL: {cfg.label}
                 </div>
               </div>
-              <div className="flex items-center justify-between gap-3 md:justify-end">
+              <div className="flex items-center justify-between gap-2 md:justify-end md:gap-3">
                 {cfg.lives > 0 && (
-                  <div className="flex items-center gap-2 rounded-xl border border-cyber-border/80 bg-cyber-surface/70 px-4 py-2" aria-label="integrity">
+                  <div className="flex items-center gap-1.5 rounded-xl border border-cyber-border/80 bg-cyber-surface/70 px-2.5 py-1.5 sm:gap-2 sm:px-4 sm:py-2" aria-label="integrity">
                     <span className="mr-1 hidden font-mono text-xs tracking-widest text-gray-400 sm:inline">INTEGRITY</span>
                     {Array.from({ length: cfg.lives }).map((_, i) => (
                       <span
                         key={i}
-                        className={`inline-block h-4 w-8 rounded-sm border ${
+                        className={`inline-block h-3 w-6 rounded-sm border sm:h-4 sm:w-8 ${
                           i < lives
                             ? "border-cyan-200 bg-cyber-cyan shadow-[0_0_12px_rgba(0,240,255,0.8)]"
                             : "border-white/10 bg-white/10"
@@ -621,17 +621,17 @@ export default function Home() {
                     ))}
                   </div>
                 )}
-                <div className="text-right font-mono">
+                <div className="hidden text-right font-mono min-[420px]:block">
                   <p className="text-[10px] tracking-[0.25em] text-gray-500">BEST</p>
-                  <p className="text-lg font-bold tabular-nums text-white">{Math.max(best, score).toLocaleString()}</p>
+                  <p className="text-sm font-bold tabular-nums text-white sm:text-lg">{Math.max(best, score).toLocaleString()}</p>
                 </div>
                 <div className="text-right font-mono">
                   <p className="text-[10px] tracking-[0.25em] text-gray-500">PHASE</p>
-                  <p className="text-lg font-bold text-white">Q: {qNum}</p>
+                  <p className="text-sm font-bold text-white sm:text-lg">Q: {qNum}</p>
                 </div>
-                <div className="rounded-lg border border-amber/60 bg-amber/10 px-4 py-1.5 text-right shadow-[0_0_16px_rgba(255,184,0,0.25)]">
+                <div className="rounded-lg border border-amber/60 bg-amber/10 px-3 py-1 text-right shadow-[0_0_16px_rgba(255,184,0,0.25)] sm:px-4 sm:py-1.5">
                   <p className="font-mono text-[10px] tracking-[0.25em] text-amber/80">SCORE</p>
-                  <p className="text-glow-amber font-display text-2xl font-black tabular-nums text-amber">
+                  <p className="text-glow-amber font-display text-xl font-black tabular-nums text-amber sm:text-2xl">
                     {score.toLocaleString()}
                   </p>
                 </div>
@@ -711,7 +711,7 @@ export default function Home() {
             <section className="mx-auto mt-6 w-full max-w-3xl flex-1">
               <div
                 key={qNum}
-                className={`tactical-corner animate-pop rounded-2xl border bg-cyber-surface/85 p-8 text-center backdrop-blur-md md:p-10 ${
+                className={`tactical-corner animate-pop rounded-2xl border bg-cyber-surface/85 p-5 text-center backdrop-blur-md sm:p-8 md:p-10 ${
                   reveal?.correct
                     ? "border-mint shadow-glowgood"
                     : reveal && !reveal.correct
@@ -719,13 +719,13 @@ export default function Home() {
                       : "border-cyber-cyan/50 shadow-glowcyan"
                 }`}
               >
-                <span className="inline-block rounded-full border border-crimson/50 bg-crimson/10 px-4 py-1 font-mono text-xs tracking-[0.3em] text-crimson">
+                <span className="inline-block rounded-full border border-crimson/50 bg-crimson/10 px-3 py-1 font-mono text-[10px] tracking-[0.3em] text-crimson sm:px-4 sm:text-xs">
                   ● {cfg.statusPill}
                 </span>
-                <p className="text-glow-white mt-6 font-display text-6xl font-black tracking-wider text-white md:text-7xl">
+                <p className="text-glow-white mt-4 font-display text-4xl font-black leading-tight tracking-wider text-white sm:mt-6 sm:text-5xl md:text-7xl">
                   {question.text}
                 </p>
-                <div className="mt-6 border-t border-cyber-border/60 pt-4 font-mono text-xs tracking-[0.25em] md:text-sm">
+                <div className="mt-4 border-t border-cyber-border/60 pt-4 font-mono text-[10px] tracking-[0.25em] sm:mt-6 sm:text-xs md:text-sm">
                   {reveal?.correct ? (
                     <span className="font-bold text-mint">STATUS: VERIFIED · +{lastGain} PTS</span>
                   ) : reveal && !reveal.correct ? (
@@ -746,7 +746,7 @@ export default function Home() {
 
               {/* Answer matrix (choices modes) */}
               {cfg.input === "choices" && (
-                <div className="mt-6 grid grid-cols-2 gap-3 md:gap-4">
+                <div className="mt-5 grid select-none grid-cols-2 gap-2.5 sm:mt-6 md:gap-4">
                   {question.choices.map((c, i) => {
                     const isPicked = reveal?.picked === c;
                     const isAnswer = c === question.answer;
@@ -766,12 +766,12 @@ export default function Home() {
                         key={`${c}-${i}`}
                         onClick={() => answer(c)}
                         disabled={!!reveal}
-                        className={`flex h-[72px] items-center gap-3 rounded-lg border px-4 transition active:scale-[0.98] disabled:cursor-default md:h-[88px] ${cls}`}
+                        className={`flex min-h-[64px] items-center gap-2 rounded-lg border px-3 transition active:scale-[0.98] disabled:cursor-default sm:h-[72px] sm:gap-3 sm:px-4 md:h-[88px] ${cls}`}
                       >
                         <span className="rounded border border-cyber-border bg-black/40 px-2 py-1 font-mono text-xs tracking-wider text-gray-400">
                           {KEY_HINTS[i]}
                         </span>
-                        <span className={`flex-1 text-center font-display text-3xl font-bold tabular-nums md:text-4xl ${num}`}>
+                        <span className={`flex-1 text-center font-display text-2xl font-bold tabular-nums sm:text-3xl md:text-4xl ${num}`}>
                           {c}
                         </span>
                         {reveal && isAnswer && (
@@ -787,9 +787,9 @@ export default function Home() {
 
               {/* Numpad (calculator mode) */}
               {cfg.input === "numpad" && (
-                <div className="mx-auto mt-6 max-w-md">
+                <div className="mx-auto mt-5 max-w-md select-none sm:mt-6">
                   <div
-                    className={`rounded-xl border bg-black/50 px-6 py-4 text-right font-display text-4xl font-bold tabular-nums tracking-wider ${
+                    className={`rounded-xl border bg-black/50 px-4 py-3 text-right font-display text-3xl font-bold tabular-nums tracking-wider sm:px-6 sm:py-4 sm:text-4xl ${
                       reveal?.correct
                         ? "border-mint text-mint shadow-glowgood"
                         : reveal && !reveal.correct
@@ -805,7 +805,7 @@ export default function Home() {
                         key={d}
                         onClick={() => pressKey(d)}
                         disabled={!!reveal}
-                        className="rounded-lg border border-cyber-border/70 bg-cyber-surface/70 py-4 font-display text-2xl font-bold text-white transition hover:border-cyber-cyan/70 hover:shadow-glowcyan active:scale-95 disabled:cursor-default disabled:opacity-50"
+                        className="rounded-lg border border-cyber-border/70 bg-cyber-surface/70 py-5 font-display text-2xl font-bold text-white transition hover:border-cyber-cyan/70 hover:shadow-glowcyan active:scale-95 disabled:cursor-default disabled:opacity-50"
                       >
                         {d}
                       </button>
@@ -813,21 +813,21 @@ export default function Home() {
                     <button
                       onClick={pressNegate}
                       disabled={!!reveal}
-                      className="rounded-lg border border-cyber-border/70 bg-cyber-surface/70 py-4 font-mono text-xl font-bold text-cyber-cyan transition hover:border-cyber-cyan/70 active:scale-95 disabled:cursor-default disabled:opacity-50"
+                      className="rounded-lg border border-cyber-border/70 bg-cyber-surface/70 py-5 font-mono text-xl font-bold text-cyber-cyan transition hover:border-cyber-cyan/70 active:scale-95 disabled:cursor-default disabled:opacity-50"
                     >
                       ±
                     </button>
                     <button
                       onClick={() => pressKey("0")}
                       disabled={!!reveal}
-                      className="rounded-lg border border-cyber-border/70 bg-cyber-surface/70 py-4 font-display text-2xl font-bold text-white transition hover:border-cyber-cyan/70 hover:shadow-glowcyan active:scale-95 disabled:cursor-default disabled:opacity-50"
+                      className="rounded-lg border border-cyber-border/70 bg-cyber-surface/70 py-5 font-display text-2xl font-bold text-white transition hover:border-cyber-cyan/70 hover:shadow-glowcyan active:scale-95 disabled:cursor-default disabled:opacity-50"
                     >
                       0
                     </button>
                     <button
                       onClick={pressBack}
                       disabled={!!reveal}
-                      className="rounded-lg border border-cyber-border/70 bg-cyber-surface/70 py-4 font-mono text-xl font-bold text-gray-300 transition hover:border-cyber-cyan/70 active:scale-95 disabled:cursor-default disabled:opacity-50"
+                      className="rounded-lg border border-cyber-border/70 bg-cyber-surface/70 py-5 font-mono text-xl font-bold text-gray-300 transition hover:border-cyber-cyan/70 active:scale-95 disabled:cursor-default disabled:opacity-50"
                     >
                       ⌫
                     </button>
@@ -890,7 +890,7 @@ export default function Home() {
               <span className="rounded border border-crimson/50 bg-crimson/10 px-4 py-1 font-mono text-xs font-bold tracking-[0.3em] text-crimson">
                 {endReason === "fuse" ? "💥 FUSE DEPLETED" : endReason === "time" ? "◷ TIME EXPIRED" : "● RUN TERMINATED"}
               </span>
-              <h2 className="mt-4 font-display text-4xl font-black tracking-wider text-white md:text-5xl">
+              <h2 className="mt-4 font-display text-3xl font-black tracking-wider text-white sm:text-4xl md:text-5xl">
                 MODE:{" "}
                 <span className="bg-gradient-to-r from-crimson to-amber bg-clip-text text-transparent">
                   {cfg.label}
@@ -902,8 +902,8 @@ export default function Home() {
 
               <div className="tactical-corner mt-6 w-full rounded-2xl border border-amber/50 bg-cyber-surface/85 p-6 shadow-[0_0_30px_rgba(255,184,0,0.2)] backdrop-blur-md md:p-8">
                 <p className="font-mono text-xs font-bold tracking-[0.3em] text-amber">⚡ TOTAL SCORE REGISTERED</p>
-                <p className="mt-2 font-display text-6xl font-black tabular-nums text-white md:text-7xl">
-                  {score.toLocaleString()} <span className="text-glow-amber text-3xl text-amber md:text-4xl">PTS</span>
+                <p className="mt-2 font-display text-5xl font-black tabular-nums text-white sm:text-6xl md:text-7xl">
+                  {score.toLocaleString()} <span className="text-glow-amber text-2xl text-amber sm:text-3xl md:text-4xl">PTS</span>
                 </p>
                 <p className="mx-auto mt-3 inline-block rounded-full border border-amber/40 px-4 py-1 font-mono text-xs tracking-[0.2em] text-amber">
                   ★ PERSONAL BEST: {Math.max(best, score).toLocaleString()} PTS{isNewBest ? " · NEW ALL-TIME HIGH" : " · ALL-TIME HIGH"}

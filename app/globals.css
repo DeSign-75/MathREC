@@ -129,3 +129,10 @@ body {
   .animate-pop, .animate-shake, .animate-pulse-glow, .animate-pulse-aura, .animate-blink { animation: none; }
   .pixel-cell { animation-duration: 0.01ms; }
 }
+
+/* Short landscape phones: compress the title hero so START stays above the fold */
+@media (max-height: 500px) and (orientation: landscape) {
+  .hero-halo, .hero-sub { display: none; }
+  .hero-title { font-size: 2.5rem !important; margin-top: 0.5rem !important; }
+  .hero-cta { margin-top: 1rem !important; }
+}
