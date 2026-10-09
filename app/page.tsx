@@ -16,8 +16,23 @@ import {
   wrongSfx,
 } from "../lib/sound";
 import PixelTransition from "../components/PixelTransition";
+import {
+  BOARD_PAGE_SIZE,
+  claimTag,
+  fetchBoard,
+  fetchMyRank,
+  fetchTag,
+  getSessionEmail,
+  getUserId,
+  postScore,
+  sendOtp,
+  signOut,
+  supabase,
+  verifyOtp,
+  type BoardRow,
+} from "../lib/online";
 
-type Screen = "title" | "modes" | "playing" | "gameover";
+type Screen = "title" | "modes" | "playing" | "gameover" | "auth" | "boards";
 type Reveal = { picked: number | null; correct: boolean; timeout?: boolean } | null;
 type EndReason = "wiped" | "fuse" | "time";
 
@@ -70,6 +85,27 @@ export default function Home() {
   const [sessionStreak, setSessionStreak] = useState(0);
   const [sessionFastest, setSessionFastest] = useState(0);
   const [operatorId] = useState(() => `GUEST-${Math.floor(1000 + Math.random() * 9000)}`);
+  // Online identity
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [tag, setTag] = useState<string | null>(null);
+  const [authStep, setAuthStep] = useState<"email" | "code" | "tag">("email");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authCode, setAuthCode] = useState("");
+  const [authTagInput, setAuthTagInput] = useState("");
+  const [authMsg, setAuthMsg] = useState("");
+  const [authBusy, setAuthBusy] = useState(false);
+  const pendingStart = useRef<Mode | null>(null);
+  // Leaderboard
+  const [boardMode, setBoardMode] = useState<Mode>("classic");
+  const [boardPage, setBoardPage] = useState(0);
+  const [boardRows, setBoardRows] = useState<BoardRow[]>([]);
+  const [boardTotal, setBoardTotal] = useState(0);
+  const [boardLoading, setBoardLoading] = useState(false);
+  const [boardError, setBoardError] = useState("");
+  const [myRank, setMyRank] = useState<{ rank: number; best: number } | null>(null);
+  // Score posting
+  const [postStatus, setPostStatus] = useState("");
+  const postedFor = useRef("");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const deadline = useRef<number>(0);
   const clockDeadline = useRef<number>(0);
@@ -113,7 +149,30 @@ export default function Home() {
     return () => window.removeEventListener("pointerdown", greet);
   }, []);
 
-  // Session stats snapshot when a run ends
+  // Online session: restore login + tag, stay subscribed
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      const email = await getSessionEmail();
+      if (!live) return;
+      setUserEmail(email);
+      if (email) {
+        const uid = await getUserId();
+        if (uid && live) setTag(await fetchTag(uid));
+      }
+    })();
+    const { data: sub } = supabase().auth.onAuthStateChange(async (_ev, session) => {
+      setUserEmail(session?.user?.email ?? null);
+      if (session?.user) setTag(await fetchTag(session.user.id));
+      else setTag(null);
+    });
+    return () => {
+      live = false;
+      sub.subscription.unsubscribe();
+    };
+  }, []);
+
+  // Session stats snapshot + global score post when a run ends
   useEffect(() => {
     if (screen !== "gameover") return;
     setSessionBest((b) => Math.max(b, score));
@@ -122,7 +181,43 @@ export default function Home() {
       const f = fastestRef.current;
       setSessionFastest((prev) => (prev === 0 ? f : Math.min(prev, f)));
     }
-  }, [screen, score, maxStreak]);
+    const key = `${mode}|${score}|${answered}`;
+    if (userEmail && score > 0 && postedFor.current !== key) {
+      postedFor.current = key;
+      setPostStatus("POSTING…");
+      postScore({
+        mode,
+        score,
+        accuracy: answered > 0 ? Math.round((correctCount / answered) * 100) : 0,
+        maxCombo: maxStreak,
+        avgMs: answered > 0 ? Math.round(totalMs / answered) : 0,
+        questions: answered,
+      }).then((err) => setPostStatus(err ?? "POSTED ✓"));
+    }
+  }, [screen, score, maxStreak, mode, answered, correctCount, totalMs, userEmail]);
+
+  // Leaderboard data
+  useEffect(() => {
+    if (screen !== "boards") return;
+    let live = true;
+    setBoardLoading(true);
+    setBoardError("");
+    (async () => {
+      const [b, r] = await Promise.all([
+        fetchBoard(boardMode, boardPage),
+        userEmail ? fetchMyRank(boardMode) : Promise.resolve(null),
+      ]);
+      if (!live) return;
+      setBoardRows(b.rows);
+      setBoardTotal(b.total);
+      setBoardError(b.error ?? "");
+      setMyRank(r);
+      setBoardLoading(false);
+    })();
+    return () => {
+      live = false;
+    };
+  }, [screen, boardMode, boardPage, userEmail]);
 
   const goWithTransition = (to: Screen) => {
     if (transitionTo) return;
@@ -135,9 +230,107 @@ export default function Home() {
     }, 1050);
   };
 
+  const requireLogin = (m: Mode | null) => {
+    if (userEmail) {
+      if (m) startGame(m);
+      else goWithTransition("modes");
+    } else {
+      clickSfx();
+      pendingStart.current = m;
+      setAuthStep("email");
+      setAuthMsg("LOGIN REQUIRED TO PLAY");
+      setScreen("auth");
+    }
+  };
+
+  const finishAuth = async () => {
+    const email = await getSessionEmail();
+    setUserEmail(email);
+    const uid = await getUserId();
+    if (uid) setTag(await fetchTag(uid));
+    const p = pendingStart.current;
+    pendingStart.current = null;
+    if (p) startGame(p);
+    else setScreen("modes");
+  };
+
+  const sendCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (authBusy) return;
+    setAuthBusy(true);
+    setAuthMsg("");
+    const err = await sendOtp(authEmail.trim());
+    setAuthBusy(false);
+    if (err) setAuthMsg(err.toUpperCase());
+    else {
+      setAuthStep("code");
+      setAuthMsg("CODE SENT — CHECK EMAIL");
+    }
+  };
+
+  const confirmCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (authBusy) return;
+    setAuthBusy(true);
+    setAuthMsg("");
+    const err = await verifyOtp(authEmail.trim(), authCode.trim());
+    setAuthBusy(false);
+    if (err) {
+      setAuthMsg(err.toUpperCase());
+      return;
+    }
+    const uid = await getUserId();
+    if (uid && (await fetchTag(uid))) {
+      setAuthCode("");
+      await finishAuth();
+    } else {
+      setAuthCode("");
+      setAuthStep("tag");
+      setAuthMsg("PICK YOUR OPERATOR TAG");
+    }
+  };
+
+  const saveTag = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (authBusy) return;
+    const uid = await getUserId();
+    if (!uid) {
+      setAuthMsg("SESSION LOST — RESEND CODE");
+      setAuthStep("email");
+      return;
+    }
+    setAuthBusy(true);
+    setAuthMsg("");
+    const err = await claimTag(uid, authTagInput);
+    setAuthBusy(false);
+    if (err) {
+      setAuthMsg(err);
+      return;
+    }
+    setAuthTagInput("");
+    await finishAuth();
+  };
+
+  const logout = async () => {
+    clickSfx();
+    await signOut();
+    setUserEmail(null);
+    setTag(null);
+    setScreen("title");
+  };
+
+  const openBoards = (m: Mode) => {
+    clickSfx();
+    setBoardMode(m);
+    setBoardPage(0);
+    setScreen("boards");
+  };
+
   const startGame = (m: Mode) => {
     unlockAudio();
     clickSfx();
+    setPostStatus("");
+    postedFor.current = "";
     setMode(m);
     setRunBest(readBest(m));
     loadBest(m);
@@ -368,9 +561,17 @@ export default function Home() {
       if (k === " " || k === "enter") goWithTransition("modes");
     } else if (screen === "modes") {
       const idx = ["1", "2", "3", "4", "5"].indexOf(k);
-      if (idx >= 0) startGame(MODE_ORDER[idx]);
-      else if (k === " " || k === "enter") startGame("classic");
+      if (idx >= 0) requireLogin(MODE_ORDER[idx]);
+      else if (k === " " || k === "enter") requireLogin("classic");
       else if (k === "escape") setScreen("title");
+    } else if (screen === "auth") {
+      if (k === "escape") setScreen("title");
+    } else if (screen === "boards") {
+      const idx = ["1", "2", "3", "4", "5"].indexOf(k);
+      if (idx >= 0) {
+        setBoardMode(MODE_ORDER[idx]);
+        setBoardPage(0);
+      } else if (k === "escape") setScreen("modes");
     } else if (screen === "playing") {
       if (k === "escape") quitToModes();
       else if (question && !reveal) {
@@ -436,9 +637,34 @@ export default function Home() {
                   </span>
                 </div>
               </div>
-              <div className="hidden items-center gap-2 rounded-md border border-cyber-border/90 bg-cyber-surface/70 px-3.5 py-1 font-mono text-xs sm:flex">
-                <span className="mr-1 text-gray-400">ID:</span>
-                <span className="font-semibold tracking-wider text-white">OPERATOR // {operatorId}</span>
+              <div className="flex items-center gap-2">
+                <div className="hidden items-center gap-2 rounded-md border border-cyber-border/90 bg-cyber-surface/70 px-3.5 py-1 font-mono text-xs sm:flex">
+                  <span className="mr-1 text-gray-400">ID:</span>
+                  <span className="font-semibold tracking-wider text-white">
+                    OPERATOR // {tag ?? operatorId}
+                  </span>
+                </div>
+                {userEmail ? (
+                  <button
+                    onClick={logout}
+                    className="rounded border border-cyber-border bg-cyber-surface/80 px-3 py-1 font-mono text-xs tracking-[0.2em] text-gray-300 transition hover:border-crimson hover:text-crimson"
+                  >
+                    LOGOUT
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      clickSfx();
+                      pendingStart.current = null;
+                      setAuthStep("email");
+                      setAuthMsg("");
+                      setScreen("auth");
+                    }}
+                    className="rounded border border-cyber-cyan/60 bg-cyber-cyan/10 px-3 py-1 font-mono text-xs tracking-[0.2em] text-cyber-cyan transition hover:shadow-glowcyan"
+                  >
+                    LOGIN
+                  </button>
+                )}
               </div>
             </header>
 
@@ -466,7 +692,7 @@ export default function Home() {
                 </span>
               </div>
               <button
-                onClick={() => goWithTransition("modes")}
+                onClick={() => requireLogin(null)}
                 className="hero-cta relative mt-8 flex items-center gap-3 rounded-xl border border-cyber-cyan bg-white px-8 py-4 font-display text-lg font-bold tracking-[0.25em] text-black transition hover:shadow-[0_0_35px_rgba(0,240,255,0.55)] active:scale-95 sm:mt-10 sm:px-12 sm:text-xl"
                 style={{ boxShadow: "0 0 24px rgba(0,240,255,0.45)" }}
               >
@@ -546,7 +772,7 @@ export default function Home() {
                   return (
                     <button
                       key={m}
-                      onClick={() => startGame(m)}
+                      onClick={() => requireLogin(m)}
                       className={`group rounded-xl border-2 bg-cyber-surface/90 p-5 text-left transition md:p-6 ${
                         primary
                           ? "border-cyber-cyan shadow-glowcyan hover:shadow-[0_0_35px_rgba(0,240,255,0.4)]"
@@ -585,7 +811,248 @@ export default function Home() {
                 <span><span className="rounded border border-cyber-border px-1.5 py-0.5 text-cyber-cyan">[ESC]</span> Back to Title</span>
                 <span className="hidden sm:inline"><span className="rounded border border-cyber-border px-1.5 py-0.5 text-cyber-cyan">[SPACE]</span> Launch Default</span>
               </div>
-              <span className="tracking-[0.2em]">SFX: <span className="text-cyber-cyan">ENABLED</span></span>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => openBoards(mode)}
+                  className="rounded border border-amber/60 bg-amber/10 px-3.5 py-1.5 tracking-[0.2em] text-amber transition hover:shadow-[0_0_16px_rgba(255,184,0,0.35)]"
+                >
+                  🏆 LEADERBOARD
+                </button>
+                <span className="tracking-[0.2em]">SFX: <span className="text-cyber-cyan">ENABLED</span></span>
+              </div>
+            </footer>
+          </>
+        )}
+
+        {/* ===== AUTH ===== */}
+        {screen === "auth" && (
+          <>
+            <header className="flex items-center justify-between border-b border-cyber-border/70 pb-3">
+              <div className="rounded-lg border border-cyber-cyan/50 bg-cyber-surface/90 px-3.5 py-1.5 font-display text-xl font-black tracking-widest text-white shadow-glowcyan">
+                Math<span className="text-cyber-cyan">REC</span>
+              </div>
+              <button
+                onClick={() => {
+                  clickSfx();
+                  setScreen("title");
+                }}
+                className="rounded border border-cyber-border bg-cyber-surface/80 px-3.5 py-1.5 font-mono text-xs tracking-[0.2em] text-gray-300 transition hover:border-cyber-cyan hover:text-cyber-cyan"
+              >
+                ← [ESC] BACK
+              </button>
+            </header>
+
+            <section className="animate-pop mx-auto flex w-full max-w-md flex-1 flex-col items-center justify-center py-8 text-center">
+              <p className="font-mono text-sm tracking-[0.45em] text-cyber-cyan/80">SECURE UPLINK</p>
+              <h2 className="text-glow-white mt-2 font-display text-3xl font-black tracking-wider text-white sm:text-4xl">
+                OPERATOR LOGIN
+              </h2>
+              <p className="mt-2 font-mono text-xs tracking-[0.25em] text-gray-500">
+                PASSWORDLESS EMAIL CODE · SCORES POST GLOBALLY
+              </p>
+
+              <div className="mt-8 w-full rounded-2xl border border-cyber-cyan/40 bg-cyber-surface/85 p-6 shadow-glowcyan backdrop-blur-md">
+                {authStep === "email" && (
+                  <form onSubmit={sendCode} className="flex flex-col gap-3">
+                    <label className="font-mono text-xs tracking-[0.25em] text-gray-400">EMAIL ADDRESS</label>
+                    <input
+                      type="email"
+                      required
+                      value={authEmail}
+                      onChange={(e) => setAuthEmail(e.target.value)}
+                      placeholder="operator@circuit.gg"
+                      className="rounded-lg border border-cyber-border bg-black/50 px-4 py-3 font-mono text-base tracking-wider text-white placeholder:text-gray-600 focus:border-cyber-cyan focus:outline-none"
+                    />
+                    <button
+                      type="submit"
+                      disabled={authBusy}
+                      className="rounded-xl border border-cyber-cyan bg-white px-5 py-3.5 font-display text-base font-bold tracking-[0.25em] text-black transition hover:shadow-[0_0_25px_rgba(0,240,255,0.5)] active:scale-[0.99] disabled:opacity-50"
+                    >
+                      {authBusy ? "TRANSMITTING…" : "SEND CODE →"}
+                    </button>
+                  </form>
+                )}
+                {authStep === "code" && (
+                  <form onSubmit={confirmCode} className="flex flex-col gap-3">
+                    <label className="font-mono text-xs tracking-[0.25em] text-gray-400">
+                      6-DIGIT CODE → {authEmail}
+                    </label>
+                    <input
+                      inputMode="numeric"
+                      required
+                      value={authCode}
+                      onChange={(e) => setAuthCode(e.target.value)}
+                      placeholder="000000"
+                      maxLength={8}
+                      className="rounded-lg border border-cyber-border bg-black/50 px-4 py-3 text-center font-display text-2xl font-bold tracking-[0.4em] text-white placeholder:text-gray-600 focus:border-cyber-cyan focus:outline-none"
+                    />
+                    <button
+                      type="submit"
+                      disabled={authBusy}
+                      className="rounded-xl border border-cyber-cyan bg-white px-5 py-3.5 font-display text-base font-bold tracking-[0.25em] text-black transition hover:shadow-[0_0_25px_rgba(0,240,255,0.5)] active:scale-[0.99] disabled:opacity-50"
+                    >
+                      {authBusy ? "VERIFYING…" : "VERIFY ✓"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        clickSfx();
+                        setAuthStep("email");
+                        setAuthMsg("");
+                      }}
+                      className="font-mono text-xs tracking-[0.25em] text-gray-500 hover:text-white"
+                    >
+                      ← CHANGE EMAIL
+                    </button>
+                  </form>
+                )}
+                {authStep === "tag" && (
+                  <form onSubmit={saveTag} className="flex flex-col gap-3">
+                    <label className="font-mono text-xs tracking-[0.25em] text-gray-400">
+                      CLAIM OPERATOR TAG (3-16 CHARS)
+                    </label>
+                    <input
+                      required
+                      value={authTagInput}
+                      onChange={(e) => setAuthTagInput(e.target.value.toUpperCase())}
+                      placeholder="NEON-42"
+                      maxLength={16}
+                      className="rounded-lg border border-cyber-border bg-black/50 px-4 py-3 text-center font-display text-2xl font-bold tracking-[0.25em] text-white placeholder:text-gray-600 focus:border-cyber-cyan focus:outline-none"
+                    />
+                    <button
+                      type="submit"
+                      disabled={authBusy}
+                      className="rounded-xl border border-cyber-cyan bg-white px-5 py-3.5 font-display text-base font-bold tracking-[0.25em] text-black transition hover:shadow-[0_0_25px_rgba(0,240,255,0.5)] active:scale-[0.99] disabled:opacity-50"
+                    >
+                      {authBusy ? "REGISTERING…" : "DEPLOY →"}
+                    </button>
+                  </form>
+                )}
+                {authMsg && (
+                  <p className={`mt-4 font-mono text-xs tracking-[0.2em] ${authMsg.includes("SENT") || authMsg.includes("PICK") ? "text-mint" : "text-amber"}`}>
+                    {authMsg}
+                  </p>
+                )}
+              </div>
+            </section>
+
+            <footer className="flex items-center justify-center border-t border-cyber-border/70 pt-3 font-mono text-xs text-gray-500">
+              <span className="tracking-[0.2em]">ENCRYPTED CHANNEL · SUPABASE AUTH</span>
+            </footer>
+          </>
+        )}
+
+        {/* ===== LEADERBOARD ===== */}
+        {screen === "boards" && (
+          <>
+            <header className="flex items-center justify-between border-b border-cyber-border/70 pb-3">
+              <div className="flex items-center gap-4">
+                <div className="rounded-lg border border-amber/60 bg-cyber-surface/90 px-3.5 py-1.5 font-display text-xl font-black tracking-widest text-white shadow-[0_0_16px_rgba(255,184,0,0.25)]">
+                  Math<span className="text-amber">REC</span>
+                </div>
+                <div className="hidden font-mono text-xs tracking-[0.2em] sm:block">
+                  <p className="text-amber/70">GLOBAL RANKINGS</p>
+                  <p className="mt-0.5 font-semibold text-white">TOP 100 // ALL MODES</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  clickSfx();
+                  setScreen("modes");
+                }}
+                className="rounded border border-cyber-border bg-cyber-surface/80 px-3.5 py-1.5 font-mono text-xs tracking-[0.2em] text-gray-300 transition hover:border-cyber-cyan hover:text-cyber-cyan"
+              >
+                ← [ESC] MODES
+              </button>
+            </header>
+
+            <section className="animate-pop mx-auto flex w-full max-w-3xl flex-1 flex-col py-6">
+              <div className="flex flex-wrap gap-2">
+                {MODE_ORDER.map((m, i) => (
+                  <button
+                    key={m}
+                    onClick={() => {
+                      clickSfx();
+                      setBoardMode(m);
+                      setBoardPage(0);
+                    }}
+                    className={`rounded-lg border px-3.5 py-2 font-mono text-xs font-bold tracking-[0.15em] transition ${
+                      boardMode === m
+                        ? "border-cyber-cyan bg-cyber-cyan/15 text-cyber-cyan shadow-glowcyan"
+                        : "border-cyber-border/70 bg-cyber-surface/60 text-gray-400 hover:border-cyber-cyan/50 hover:text-white"
+                    }`}
+                  >
+                    [{i + 1}] {MODES[m].label}
+                  </button>
+                ))}
+              </div>
+
+              {myRank && (
+                <div className="mt-4 flex items-center justify-between rounded-xl border border-amber/50 bg-amber/10 px-4 py-3 font-mono text-xs tracking-[0.2em]">
+                  <span className="font-bold text-amber">★ MY RANK: #{myRank.rank}</span>
+                  <span className="text-amber/80">BEST: {myRank.best.toLocaleString()} PTS</span>
+                </div>
+              )}
+
+              <div className="mt-4 flex-1 rounded-xl border border-cyber-border/70 bg-black/30">
+                {boardLoading ? (
+                  <p className="p-8 text-center font-mono text-xs tracking-[0.3em] text-gray-500">LOADING RANKINGS…</p>
+                ) : boardError ? (
+                  <p className="p-8 text-center font-mono text-xs tracking-[0.3em] text-crimson">{boardError}</p>
+                ) : boardRows.length === 0 ? (
+                  <p className="p-8 text-center font-mono text-xs tracking-[0.3em] text-gray-500">
+                    NO RUNS POSTED YET — BE THE FIRST
+                  </p>
+                ) : (
+                  boardRows.map((r) => (
+                    <div
+                      key={`${r.rank}-${r.tag}`}
+                      className={`flex items-center gap-3 border-b border-cyber-border/40 px-4 py-2.5 font-mono text-sm last:border-0 ${
+                        r.mine ? "bg-cyber-cyan/10" : ""
+                      }`}
+                    >
+                      <span className={`w-12 shrink-0 font-bold tabular-nums ${r.rank <= 3 ? "text-amber" : "text-gray-500"}`}>
+                        #{r.rank}
+                      </span>
+                      <span className="flex-1 truncate font-bold tracking-wider text-white">
+                        {r.tag}{r.mine ? <span className="ml-2 text-[10px] text-cyber-cyan">◀ YOU</span> : null}
+                      </span>
+                      <span className="hidden text-xs text-gray-500 sm:inline">{r.accuracy}% · ×{r.maxCombo}</span>
+                      <span className="font-bold tabular-nums text-amber">{r.score.toLocaleString()}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <div className="mt-4 flex items-center justify-between font-mono text-xs text-gray-400">
+                <button
+                  onClick={() => {
+                    clickSfx();
+                    setBoardPage((p) => Math.max(0, p - 1));
+                  }}
+                  disabled={boardPage === 0}
+                  className="rounded border border-cyber-border bg-cyber-surface/80 px-4 py-1.5 tracking-[0.2em] transition hover:border-cyber-cyan hover:text-cyber-cyan disabled:opacity-40"
+                >
+                  ← PREV
+                </button>
+                <span className="tracking-[0.2em]">
+                  PAGE {boardPage + 1} / {Math.max(1, Math.ceil(boardTotal / BOARD_PAGE_SIZE))} · {boardTotal} RUNS
+                </span>
+                <button
+                  onClick={() => {
+                    clickSfx();
+                    setBoardPage((p) => (boardPage + 1) * BOARD_PAGE_SIZE < boardTotal ? p + 1 : p);
+                  }}
+                  disabled={(boardPage + 1) * BOARD_PAGE_SIZE >= boardTotal}
+                  className="rounded border border-cyber-border bg-cyber-surface/80 px-4 py-1.5 tracking-[0.2em] transition hover:border-cyber-cyan hover:text-cyber-cyan disabled:opacity-40"
+                >
+                  NEXT →
+                </button>
+              </div>
+            </section>
+
+            <footer className="flex items-center justify-center border-t border-cyber-border/70 pt-3 font-mono text-xs text-gray-500">
+              <span className="tracking-[0.2em]">KEYS [1-5] SWITCH MODE · [ESC] BACK</span>
             </footer>
           </>
         )}
@@ -908,6 +1375,11 @@ export default function Home() {
                 <p className="mx-auto mt-3 inline-block rounded-full border border-amber/40 px-4 py-1 font-mono text-xs tracking-[0.2em] text-amber">
                   ★ PERSONAL BEST: {Math.max(best, score).toLocaleString()} PTS{isNewBest ? " · NEW ALL-TIME HIGH" : " · ALL-TIME HIGH"}
                 </p>
+                {postStatus && (
+                  <p className={`mt-2 font-mono text-xs tracking-[0.25em] ${postStatus.includes("POSTED") ? "text-mint" : "text-gray-400"}`}>
+                    {postStatus === "POSTED ✓" ? "✓ SCORE POSTED TO GLOBAL BOARD" : postStatus}
+                  </p>
+                )}
                 <div className="mt-6 grid grid-cols-2 gap-3 border-t border-cyber-border/60 pt-6 md:grid-cols-4">
                   {[
                     { label: "COMPLETED", value: String(answered), sub: "Questions Solved", cls: "text-white", subCls: "text-mint" },
@@ -940,6 +1412,12 @@ export default function Home() {
                   className="rounded-xl border border-cyber-border bg-cyber-surface/80 px-5 py-4 font-display text-lg font-bold tracking-[0.25em] text-white transition hover:border-cyber-cyan/70 active:scale-[0.99]"
                 >
                   CHANGE MODE
+                </button>
+                <button
+                  onClick={() => openBoards(mode)}
+                  className="rounded-xl border border-amber/60 bg-amber/10 px-5 py-4 font-display text-lg font-bold tracking-[0.25em] text-amber transition hover:shadow-[0_0_25px_rgba(255,184,0,0.4)] active:scale-[0.99]"
+                >
+                  🏆 GLOBAL LEADERBOARD
                 </button>
               </div>
               <button

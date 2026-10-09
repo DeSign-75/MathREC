@@ -3,5 +3,8 @@ node_modules
 out
 *.log
 .DS_Store
+# Local env with secrets — NEVER commit
+.env*.local
+.env
 # Local design reference material (mockups + spec)
 /mathrec_web_game_redesign
