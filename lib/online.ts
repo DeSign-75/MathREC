@@ -1,6 +1,5 @@
 import { createClient } from "./supabase/client";
 import type { Mode } from "./modes";
-
 export interface BoardRow {
   rank: number;
   tag: string;
@@ -21,51 +20,28 @@ export function supabase() {
   return browser;
 }
 
-export async function getSessionEmail(): Promise<string | null> {
-  const {
-    data: { session },
-  } = await supabase().auth.getSession();
-  return session?.user?.email ?? null;
-}
-
-export async function getUserId(): Promise<string | null> {
-  const {
-    data: { user },
-  } = await supabase().auth.getUser();
-  return user?.id ?? null;
-}
-
-export async function sendOtp(email: string) {
-  const { error } = await supabase().auth.signInWithOtp({
-    email,
-    options: { shouldCreateUser: true },
-  });
-  return error ? error.message : null;
-}
-
-export async function verifyOtp(email: string, code: string) {
-  const { error } = await supabase().auth.verifyOtp({ email, token: code, type: "email" });
-  return error ? error.message : null;
-}
-
-export async function signOut() {
-  await supabase().auth.signOut();
-}
-
 export async function fetchTag(userId: string): Promise<string | null> {
   const { data } = await supabase().from("profiles").select("tag").eq("id", userId).maybeSingle();
   return (data as { tag: string } | null)?.tag ?? null;
 }
 
-export async function claimTag(userId: string, tag: string): Promise<string | null> {
+/** Claim a tag via the server API (verified Clerk session, uniqueness enforced). */
+export async function claimTag(tag: string): Promise<string | null> {
   const clean = tag.trim().toUpperCase();
   if (!/^[A-Z0-9_-]{3,16}$/.test(clean)) return "TAG MUST BE 3-16 CHARS (A-Z 0-9 _ -)";
-  const { error } = await supabase().from("profiles").insert({ id: userId, tag: clean });
-  if (error) {
-    if (error.code === "23505") return "TAG TAKEN — TRY ANOTHER";
+  try {
+    const res = await fetch("/api/profile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tag: clean }),
+    });
+    if (res.ok) return null;
+    if (res.status === 401) return "LOGIN REQUIRED";
+    if (res.status === 409) return "TAG TAKEN — TRY ANOTHER";
     return "COULD NOT CLAIM TAG";
+  } catch {
+    return "OFFLINE — TRY AGAIN";
   }
-  return null;
 }
 
 export interface ScorePayload {
@@ -95,7 +71,8 @@ export async function postScore(p: ScorePayload): Promise<string | null> {
 
 export async function fetchBoard(
   mode: Mode,
-  page: number
+  page: number,
+  myId: string | null
 ): Promise<{ rows: BoardRow[]; total: number; error: string | null }> {
   const from = page * BOARD_PAGE_SIZE;
   const to = from + BOARD_PAGE_SIZE - 1;
@@ -108,7 +85,6 @@ export async function fetchBoard(
     .order("score", { ascending: false })
     .range(from, to);
   if (error) return { rows: [], total: 0, error: "BOARD OFFLINE" };
-  const me = await getUserId();
   const rows: BoardRow[] = ((data ?? []) as unknown as Array<Record<string, unknown>>).map(
     (r, i) => ({
       rank: from + i + 1,
@@ -118,15 +94,13 @@ export async function fetchBoard(
       maxCombo: r.max_combo as number,
       questions: r.questions as number,
       date: new Date(r.created_at as string).toLocaleDateString(),
-      mine: me !== null && r.user_id === me,
+      mine: myId !== null && r.user_id === myId,
     })
   );
   return { rows, total: count ?? 0, error: null };
 }
 
-export async function fetchMyRank(mode: Mode): Promise<{ rank: number; best: number } | null> {
-  const uid = await getUserId();
-  if (!uid) return null;
+export async function fetchMyRank(mode: Mode, uid: string): Promise<{ rank: number; best: number } | null> {
   const { data: best } = await supabase()
     .from("scores")
     .select("score")

@@ -15,6 +15,7 @@ import {
   welcomeSfx,
   wrongSfx,
 } from "../lib/sound";
+import { useUser, useSignIn, useClerk } from "@clerk/nextjs";
 import PixelTransition from "../components/PixelTransition";
 import {
   BOARD_PAGE_SIZE,
@@ -22,13 +23,7 @@ import {
   fetchBoard,
   fetchMyRank,
   fetchTag,
-  getSessionEmail,
-  getUserId,
   postScore,
-  sendOtp,
-  signOut,
-  supabase,
-  verifyOtp,
   type BoardRow,
 } from "../lib/online";
 
@@ -85,8 +80,10 @@ export default function Home() {
   const [sessionStreak, setSessionStreak] = useState(0);
   const [sessionFastest, setSessionFastest] = useState(0);
   const [operatorId] = useState(() => `GUEST-${Math.floor(1000 + Math.random() * 9000)}`);
-  // Online identity
-  const [userEmail, setUserEmail] = useState<string | null>(null);
+  // Online identity (Clerk; null = guest)
+  const { user } = useUser();
+  const { signIn, setActive, isLoaded: signInLoaded } = useSignIn();
+  const { signOut } = useClerk();
   const [tag, setTag] = useState<string | null>(null);
   const [authStep, setAuthStep] = useState<"email" | "code" | "tag">("email");
   const [authEmail, setAuthEmail] = useState("");
@@ -149,28 +146,43 @@ export default function Home() {
     return () => window.removeEventListener("pointerdown", greet);
   }, []);
 
-  // Online session: restore login + tag, stay subscribed
+  // Clerk session -> operator tag. Drives post-login routing exactly once per flow.
+  const authFlow = useRef(false);
   useEffect(() => {
+    if (!user) {
+      setTag(null);
+      return;
+    }
     let live = true;
     (async () => {
-      const email = await getSessionEmail();
+      const t = await fetchTag(user.id);
       if (!live) return;
-      setUserEmail(email);
-      if (email) {
-        const uid = await getUserId();
-        if (uid && live) setTag(await fetchTag(uid));
+      setTag(t);
+      if (!authFlow.current) return;
+      authFlow.current = false;
+      try {
+        const p = sessionStorage.getItem("mathrec-pending") as Mode | null;
+        sessionStorage.removeItem("mathrec-pending");
+        pendingStart.current =
+          p && (MODE_ORDER as string[]).includes(p) ? (p as Mode) : pendingStart.current;
+      } catch {
+        /* ignore */
+      }
+      if (t) {
+        const p = pendingStart.current;
+        pendingStart.current = null;
+        if (p) startGame(p);
+        else setScreen("modes");
+      } else {
+        setAuthStep("tag");
+        setAuthMsg("PICK YOUR OPERATOR TAG");
+        setScreen("auth");
       }
     })();
-    const { data: sub } = supabase().auth.onAuthStateChange(async (_ev, session) => {
-      setUserEmail(session?.user?.email ?? null);
-      if (session?.user) setTag(await fetchTag(session.user.id));
-      else setTag(null);
-    });
     return () => {
       live = false;
-      sub.subscription.unsubscribe();
     };
-  }, []);
+  }, [user]);
 
   // Session stats snapshot + global score post when a run ends
   useEffect(() => {
@@ -182,7 +194,7 @@ export default function Home() {
       setSessionFastest((prev) => (prev === 0 ? f : Math.min(prev, f)));
     }
     const key = `${mode}|${score}|${answered}`;
-    if (userEmail && score > 0 && postedFor.current !== key) {
+    if (user && score > 0 && postedFor.current !== key) {
       postedFor.current = key;
       setPostStatus("POSTING…");
       postScore({
@@ -194,7 +206,7 @@ export default function Home() {
         questions: answered,
       }).then((err) => setPostStatus(err ?? "POSTED ✓"));
     }
-  }, [screen, score, maxStreak, mode, answered, correctCount, totalMs, userEmail]);
+  }, [screen, score, maxStreak, mode, answered, correctCount, totalMs, user]);
 
   // Leaderboard data
   useEffect(() => {
@@ -204,8 +216,8 @@ export default function Home() {
     setBoardError("");
     (async () => {
       const [b, r] = await Promise.all([
-        fetchBoard(boardMode, boardPage),
-        userEmail ? fetchMyRank(boardMode) : Promise.resolve(null),
+        fetchBoard(boardMode, boardPage, user?.id ?? null),
+        user ? fetchMyRank(boardMode, user.id) : Promise.resolve(null),
       ]);
       if (!live) return;
       setBoardRows(b.rows);
@@ -217,7 +229,7 @@ export default function Home() {
     return () => {
       live = false;
     };
-  }, [screen, boardMode, boardPage, userEmail]);
+  }, [screen, boardMode, boardPage, user]);
 
   const goWithTransition = (to: Screen) => {
     if (transitionTo) return;
@@ -231,11 +243,12 @@ export default function Home() {
   };
 
   const requireLogin = (m: Mode | null) => {
-    if (userEmail) {
+    if (user) {
       if (m) startGame(m);
       else goWithTransition("modes");
     } else {
       clickSfx();
+      authFlow.current = true;
       pendingStart.current = m;
       setAuthStep("email");
       setAuthMsg("LOGIN REQUIRED TO PLAY");
@@ -243,78 +256,94 @@ export default function Home() {
     }
   };
 
-  const finishAuth = async () => {
-    const email = await getSessionEmail();
-    setUserEmail(email);
-    const uid = await getUserId();
-    if (uid) setTag(await fetchTag(uid));
+  const clerkErr = (e: unknown): string => {
+    const err = e as { errors?: Array<{ message?: string }> };
+    return (err?.errors?.[0]?.message ?? "AUTH FAILED").toUpperCase();
+  };
+
+  const sendCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (authBusy || !signInLoaded || !signIn) return;
+    setAuthBusy(true);
+    setAuthMsg("");
+    try {
+      await signIn.create({ identifier: authEmail.trim() });
+      const factor = (signIn.supportedFirstFactors as unknown as Array<{ strategy: string; emailAddressId?: string }> | undefined)?.find(
+        (f) => f.strategy === "email_code"
+      );
+      if (!factor?.emailAddressId) {
+        setAuthMsg("EMAIL CODE UNAVAILABLE");
+        setAuthBusy(false);
+        return;
+      }
+      await signIn.prepareFirstFactor({ strategy: "email_code", emailAddressId: factor.emailAddressId });
+      setAuthStep("code");
+      setAuthMsg("CODE SENT — CHECK EMAIL");
+    } catch (err) {
+      setAuthMsg(clerkErr(err));
+    }
+    setAuthBusy(false);
+  };
+
+  const confirmCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (authBusy || !signInLoaded || !signIn || !setActive) return;
+    setAuthBusy(true);
+    setAuthMsg("");
+    try {
+      const res = await signIn.attemptFirstFactor({ strategy: "email_code", code: authCode.trim() });
+      if (res.status === "complete") {
+        authFlow.current = true;
+        setAuthCode("");
+        await setActive({ session: res.createdSessionId });
+        // The session effect routes to tag-claim or straight into the game.
+      } else {
+        setAuthMsg("CHECK CODE AND RETRY");
+      }
+    } catch (err) {
+      setAuthMsg(clerkErr(err));
+    }
+    setAuthBusy(false);
+  };
+
+  const googleLogin = async () => {
+    if (!signInLoaded || !signIn) return;
+    clickSfx();
+    authFlow.current = true;
+    try {
+      sessionStorage.setItem("mathrec-pending", pendingStart.current ?? "");
+    } catch {
+      /* ignore */
+    }
+    await signIn.authenticateWithRedirect({
+      strategy: "oauth_google",
+      redirectUrl: "/sso-callback",
+      redirectUrlComplete: "/",
+    });
+  };
+
+  const saveTag = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (authBusy || !user) return;
+    setAuthBusy(true);
+    setAuthMsg("");
+    const err = await claimTag(authTagInput);
+    setAuthBusy(false);
+    if (err) {
+      setAuthMsg(err);
+      return;
+    }
+    setTag(authTagInput.trim().toUpperCase());
+    setAuthTagInput("");
     const p = pendingStart.current;
     pendingStart.current = null;
     if (p) startGame(p);
     else setScreen("modes");
   };
 
-  const sendCode = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (authBusy) return;
-    setAuthBusy(true);
-    setAuthMsg("");
-    const err = await sendOtp(authEmail.trim());
-    setAuthBusy(false);
-    if (err) setAuthMsg(err.toUpperCase());
-    else {
-      setAuthStep("code");
-      setAuthMsg("CODE SENT — CHECK EMAIL");
-    }
-  };
-
-  const confirmCode = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (authBusy) return;
-    setAuthBusy(true);
-    setAuthMsg("");
-    const err = await verifyOtp(authEmail.trim(), authCode.trim());
-    setAuthBusy(false);
-    if (err) {
-      setAuthMsg(err.toUpperCase());
-      return;
-    }
-    const uid = await getUserId();
-    if (uid && (await fetchTag(uid))) {
-      setAuthCode("");
-      await finishAuth();
-    } else {
-      setAuthCode("");
-      setAuthStep("tag");
-      setAuthMsg("PICK YOUR OPERATOR TAG");
-    }
-  };
-
-  const saveTag = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (authBusy) return;
-    const uid = await getUserId();
-    if (!uid) {
-      setAuthMsg("SESSION LOST — RESEND CODE");
-      setAuthStep("email");
-      return;
-    }
-    setAuthBusy(true);
-    setAuthMsg("");
-    const err = await claimTag(uid, authTagInput);
-    setAuthBusy(false);
-    if (err) {
-      setAuthMsg(err);
-      return;
-    }
-    setAuthTagInput("");
-    await finishAuth();
-  };
-
   const logout = async () => {
     clickSfx();
     await signOut();
-    setUserEmail(null);
     setTag(null);
     setScreen("title");
   };
@@ -644,7 +673,7 @@ export default function Home() {
                     OPERATOR // {tag ?? operatorId}
                   </span>
                 </div>
-                {userEmail ? (
+                {user ? (
                   <button
                     onClick={logout}
                     className="rounded border border-cyber-border bg-cyber-surface/80 px-3 py-1 font-mono text-xs tracking-[0.2em] text-gray-300 transition hover:border-crimson hover:text-crimson"
@@ -853,6 +882,7 @@ export default function Home() {
 
               <div className="mt-8 w-full rounded-2xl border border-cyber-cyan/40 bg-cyber-surface/85 p-6 shadow-glowcyan backdrop-blur-md">
                 {authStep === "email" && (
+                  <>
                   <form onSubmit={sendCode} className="flex flex-col gap-3">
                     <label className="font-mono text-xs tracking-[0.25em] text-gray-400">EMAIL ADDRESS</label>
                     <input
@@ -871,6 +901,32 @@ export default function Home() {
                       {authBusy ? "TRANSMITTING…" : "SEND CODE →"}
                     </button>
                   </form>
+                  <div className="mt-4 flex items-center gap-3 font-mono text-[10px] tracking-[0.3em] text-gray-600">
+                    <span className="h-px flex-1 bg-cyber-border/60" /> OR <span className="h-px flex-1 bg-cyber-border/60" />
+                  </div>
+                  <button
+                    onClick={googleLogin}
+                    className="mt-4 flex w-full items-center justify-center gap-3 rounded-xl border border-cyber-border bg-cyber-surface/80 px-5 py-3.5 font-display text-base font-bold tracking-[0.2em] text-white transition hover:border-cyber-cyan/70 hover:shadow-glowcyan active:scale-[0.99]"
+                  >
+                    <span className="font-mono text-lg font-bold text-cyber-cyan">G</span> CONTINUE WITH GOOGLE
+                  </button>
+                  <button
+                    onClick={() => {
+                      const p = pendingStart.current;
+                      pendingStart.current = null;
+                      try {
+                        sessionStorage.removeItem("mathrec-pending");
+                      } catch {
+                        /* ignore */
+                      }
+                      if (p) startGame(p);
+                      else setScreen("modes");
+                    }}
+                    className="mt-3 font-mono text-xs tracking-[0.25em] text-gray-500 transition hover:text-white"
+                  >
+                    CONTINUE AS GUEST →
+                  </button>
+                  </>
                 )}
                 {authStep === "code" && (
                   <form onSubmit={confirmCode} className="flex flex-col gap-3">
@@ -1379,6 +1435,20 @@ export default function Home() {
                   <p className={`mt-2 font-mono text-xs tracking-[0.25em] ${postStatus.includes("POSTED") ? "text-mint" : "text-gray-400"}`}>
                     {postStatus === "POSTED ✓" ? "✓ SCORE POSTED TO GLOBAL BOARD" : postStatus}
                   </p>
+                )}
+                {!user && (
+                  <button
+                    onClick={() => {
+                      clickSfx();
+                      pendingStart.current = null;
+                      setAuthStep("email");
+                      setAuthMsg("LOG IN TO RANK YOUR SCORE");
+                      setScreen("auth");
+                    }}
+                    className="mt-2 font-mono text-xs tracking-[0.25em] text-cyber-cyan transition hover:text-white"
+                  >
+                    LOG IN TO RANK THIS SCORE →
+                  </button>
                 )}
                 <div className="mt-6 grid grid-cols-2 gap-3 border-t border-cyber-border/60 pt-6 md:grid-cols-4">
                   {[

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { auth } from "@clerk/nextjs/server";
+import { createAdminClient } from "@/lib/supabase/server";
 import { MODES, type Mode } from "@/lib/modes";
 
 const MAX_SCORE = 500_000;
@@ -15,11 +16,8 @@ function num(v: unknown, min: number, max: number): number | null {
 }
 
 export async function POST(req: Request) {
-  const supabase = createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "login required" }, { status: 401 });
+  const { userId } = await auth();
+  if (!userId) return NextResponse.json({ error: "login required" }, { status: 401 });
 
   let body: unknown;
   try {
@@ -38,11 +36,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "invalid fields" }, { status: 400 });
   }
 
+  const supabase = createAdminClient();
+
   // Rate limit: one submission per user per 5s
   const { data: recent } = await supabase
     .from("scores")
     .select("created_at")
-    .eq("user_id", user.id)
+    .eq("user_id", userId)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -50,22 +50,22 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "too fast" }, { status: 429 });
   }
 
-  // Resilient profile: auto-create a fallback tag if the picker never ran
+  // Profile must exist (created at tag claim); resilient fallback otherwise
   const { data: profile } = await supabase
     .from("profiles")
     .select("id")
-    .eq("id", user.id)
+    .eq("id", userId)
     .maybeSingle();
   if (!profile) {
-    const tag = `OPERATOR-${user.id.slice(0, 4).toUpperCase()}`;
-    const { error } = await supabase.from("profiles").insert({ id: user.id, tag });
+    const tag = `OPERATOR-${userId.slice(-4).toUpperCase()}`;
+    const { error } = await supabase.from("profiles").insert({ id: userId, tag });
     if (error) return NextResponse.json({ error: "profile missing" }, { status: 409 });
   }
 
   const { data, error } = await supabase
     .from("scores")
     .insert({
-      user_id: user.id,
+      user_id: userId,
       mode: b.mode,
       score,
       accuracy,
