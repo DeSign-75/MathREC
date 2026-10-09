@@ -2,6 +2,7 @@ node_modules
 .next
 out
 *.log
+*.tsbuildinfo
 .DS_Store
 # Local env with secrets — NEVER commit
 .env*.local
