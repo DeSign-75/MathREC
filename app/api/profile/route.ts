@@ -13,7 +13,8 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ error: "invalid json" }, { status: 400 });
   }
-  const tag = ((body as Record<string, unknown>).tag as string)?.trim().toUpperCase() ?? "";
+  const raw = (body as Record<string, unknown>).tag;
+  const tag = typeof raw === "string" ? raw.trim().toUpperCase() : "";
   if (!/^[A-Z0-9_-]{3,16}$/.test(tag)) {
     return NextResponse.json({ error: "invalid tag" }, { status: 400 });
   }

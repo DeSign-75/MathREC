@@ -7,6 +7,9 @@ let admin: any = null;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function createAdminClient(): any {
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error("SUPABASE_SERVICE_ROLE_KEY is not set (server env)");
+  }
   if (!admin) {
     admin = createSupabaseClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,

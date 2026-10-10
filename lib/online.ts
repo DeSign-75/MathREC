@@ -32,6 +32,7 @@ export async function claimTag(tag: string): Promise<string | null> {
   try {
     const res = await fetch("/api/profile", {
       method: "POST",
+      credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ tag: clean }),
     });
@@ -57,6 +58,7 @@ export async function postScore(p: ScorePayload): Promise<string | null> {
   try {
     const res = await fetch("/api/scores", {
       method: "POST",
+      credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(p),
     });
@@ -78,7 +80,7 @@ export async function fetchBoard(
   const to = from + BOARD_PAGE_SIZE - 1;
   const { data, error, count } = await supabase()
     .from("scores")
-    .select("score, accuracy, max_combo, questions, created_at, profiles!inner(tag), user_id", {
+    .select("score, accuracy, max_combo, questions, created_at, profiles(tag), user_id", {
       count: "exact",
     })
     .eq("mode", mode)

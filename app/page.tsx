@@ -339,6 +339,8 @@ export default function Home() {
     clickSfx();
     await signOut();
     setTag(null);
+    authFlow.current = false;
+    pendingStart.current = null;
     setScreen("title");
   };
 
@@ -588,7 +590,11 @@ export default function Home() {
       else if (k === " " || k === "enter") requireLogin("classic");
       else if (k === "escape") setScreen("title");
     } else if (screen === "auth") {
-      if (k === "escape") setScreen("title");
+      if (k === "escape") {
+        authFlow.current = false;
+        pendingStart.current = null;
+        setScreen("title");
+      }
     } else if (screen === "boards") {
       const idx = ["1", "2", "3", "4", "5"].indexOf(k);
       if (idx >= 0) {
@@ -859,6 +865,8 @@ export default function Home() {
               <button
                 onClick={() => {
                   clickSfx();
+                  authFlow.current = false;
+                  pendingStart.current = null;
                   setScreen("title");
                 }}
                 className="rounded border border-cyber-border bg-cyber-surface/80 px-3.5 py-1.5 font-mono text-xs tracking-[0.2em] text-gray-300 transition hover:border-cyber-cyan hover:text-cyber-cyan"
@@ -910,6 +918,7 @@ export default function Home() {
                     onClick={() => {
                       const p = pendingStart.current;
                       pendingStart.current = null;
+                      authFlow.current = false;
                       try {
                         sessionStorage.removeItem("mathrec-pending");
                       } catch {
@@ -989,7 +998,7 @@ export default function Home() {
             </section>
 
             <footer className="flex items-center justify-center border-t border-cyber-border/70 pt-3 font-mono text-xs text-gray-500">
-              <span className="tracking-[0.2em]">ENCRYPTED CHANNEL · SUPABASE AUTH</span>
+              <span className="tracking-[0.2em]">ENCRYPTED CHANNEL · CLERK AUTH</span>
             </footer>
           </>
         )}

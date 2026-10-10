@@ -38,28 +38,49 @@ export async function POST(req: Request) {
 
   const supabase = createAdminClient();
 
-  // Rate limit: one submission per user per 5s
-  const { data: recent } = await supabase
+  // Rate limit: one submission per user per 5s (fail closed on DB error)
+  const { data: recent, error: recentErr } = await supabase
     .from("scores")
     .select("created_at")
     .eq("user_id", userId)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
+  if (recentErr) return NextResponse.json({ error: "try again" }, { status: 503 });
   if (recent && Date.now() - new Date(recent.created_at).getTime() < RATE_LIMIT_MS) {
     return NextResponse.json({ error: "too fast" }, { status: 429 });
   }
 
-  // Profile must exist (created at tag claim); resilient fallback otherwise
+  // Cross-field sanity: max ~1250 pts/answer (1000 speed + 250 streak), so a
+  // score must be achievable within the reported question count. Blunt but
+  // effective against curl-posted fantasy scores.
+  if (questions === 0 && score !== 0) {
+    return NextResponse.json({ error: "invalid fields" }, { status: 400 });
+  }
+  if (score > 1250 * Math.max(questions, 1)) {
+    return NextResponse.json({ error: "implausible score" }, { status: 400 });
+  }
+
+  // Resilient profile: auto-create a fallback tag if the picker never ran.
+  // Random suffix + retry so a tag collision can never drop a legit score.
   const { data: profile } = await supabase
     .from("profiles")
     .select("id")
     .eq("id", userId)
     .maybeSingle();
   if (!profile) {
-    const tag = `OPERATOR-${userId.slice(-4).toUpperCase()}`;
-    const { error } = await supabase.from("profiles").insert({ id: userId, tag });
-    if (error) return NextResponse.json({ error: "profile missing" }, { status: 409 });
+    let created = false;
+    for (let attempt = 0; attempt < 3 && !created; attempt++) {
+      const suffix = Math.random().toString(36).slice(2, 6).toUpperCase();
+      const { error } = await supabase
+        .from("profiles")
+        .insert({ id: userId, tag: `OPERATOR-${suffix}` });
+      if (!error) created = true;
+      else if (error.code !== "23505") {
+        return NextResponse.json({ error: "profile missing" }, { status: 500 });
+      }
+    }
+    if (!created) return NextResponse.json({ error: "profile missing" }, { status: 500 });
   }
 
   const { data, error } = await supabase
