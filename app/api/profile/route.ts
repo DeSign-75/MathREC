@@ -24,7 +24,18 @@ export async function POST(req: Request) {
     .select("tag")
     .eq("id", userId)
     .maybeSingle();
-  if (existing) return NextResponse.json({ tag: (existing as { tag: string }).tag });
+  if (existing) {
+    // Rename (or confirm): no-op when unchanged, 409 when taken.
+    if ((existing as { tag: string }).tag === tag) {
+      return NextResponse.json({ tag });
+    }
+    const { error } = await supabase.from("profiles").update({ tag }).eq("id", userId);
+    if (error) {
+      if (error.code === "23505") return NextResponse.json({ error: "tag taken" }, { status: 409 });
+      return NextResponse.json({ error: "update failed" }, { status: 500 });
+    }
+    return NextResponse.json({ tag });
+  }
 
   const { error } = await supabase.from("profiles").insert({ id: userId, tag });
   if (error) {

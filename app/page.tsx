@@ -168,16 +168,10 @@ export default function Home() {
       } catch {
         /* ignore */
       }
-      if (t) {
-        const p = pendingStart.current;
-        pendingStart.current = null;
-        if (p) startGame(p);
-        else setScreen("modes");
-      } else {
-        setAuthStep("tag");
-        setAuthMsg("PICK YOUR OPERATOR TAG");
-        setScreen("auth");
-      }
+      setAuthTagInput(t ?? "");
+      setAuthStep("tag");
+      setAuthMsg(t ? "CONFIRM OR CHANGE YOUR TAG" : "PICK YOUR OPERATOR TAG");
+      setScreen("auth");
     })();
     return () => {
       live = false;
@@ -841,12 +835,14 @@ export default function Home() {
                 <span className="hidden sm:inline"><span className="rounded border border-cyber-border px-1.5 py-0.5 text-cyber-cyan">[SPACE]</span> Launch Default</span>
               </div>
               <div className="flex items-center gap-3">
-                <button
-                  onClick={() => openBoards(mode)}
-                  className="rounded border border-amber/60 bg-amber/10 px-3.5 py-1.5 tracking-[0.2em] text-amber transition hover:shadow-[0_0_16px_rgba(255,184,0,0.35)]"
-                >
-                  🏆 LEADERBOARD
-                </button>
+                {user && (
+                  <button
+                    onClick={() => openBoards(mode)}
+                    className="rounded border border-amber/60 bg-amber/10 px-3.5 py-1.5 tracking-[0.2em] text-amber transition hover:shadow-[0_0_16px_rgba(255,184,0,0.35)]"
+                  >
+                    🏆 LEADERBOARD
+                  </button>
+                )}
                 <span className="tracking-[0.2em]">SFX: <span className="text-cyber-cyan">ENABLED</span></span>
               </div>
             </footer>
@@ -1483,12 +1479,14 @@ export default function Home() {
                 >
                   CHANGE MODE
                 </button>
-                <button
-                  onClick={() => openBoards(mode)}
-                  className="rounded-xl border border-amber/60 bg-amber/10 px-5 py-4 font-display text-lg font-bold tracking-[0.25em] text-amber transition hover:shadow-[0_0_25px_rgba(255,184,0,0.4)] active:scale-[0.99]"
-                >
-                  🏆 GLOBAL LEADERBOARD
-                </button>
+                {user && (
+                  <button
+                    onClick={() => openBoards(mode)}
+                    className="rounded-xl border border-amber/60 bg-amber/10 px-5 py-4 font-display text-lg font-bold tracking-[0.25em] text-amber transition hover:shadow-[0_0_25px_rgba(255,184,0,0.4)] active:scale-[0.99]"
+                  >
+                    🏆 GLOBAL LEADERBOARD
+                  </button>
+                )}
               </div>
               <button
                 onClick={() => {
