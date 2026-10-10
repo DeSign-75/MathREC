@@ -15,7 +15,7 @@ import {
   welcomeSfx,
   wrongSfx,
 } from "../lib/sound";
-import { useUser, useSignIn, useClerk } from "@clerk/nextjs";
+import { useUser, useSignIn, useSignUp, useClerk } from "@clerk/nextjs";
 import PixelTransition from "../components/PixelTransition";
 import {
   BOARD_PAGE_SIZE,
@@ -83,7 +83,10 @@ export default function Home() {
   // Online identity (Clerk; null = guest)
   const { user } = useUser();
   const { signIn, setActive, isLoaded: signInLoaded } = useSignIn();
+  const { signUp, setActive: setActiveUp, isLoaded: signUpLoaded } = useSignUp();
   const { signOut } = useClerk();
+  const [clerkStuck, setClerkStuck] = useState(false);
+  const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
   const [tag, setTag] = useState<string | null>(null);
   const [authStep, setAuthStep] = useState<"email" | "code" | "tag">("email");
   const [authEmail, setAuthEmail] = useState("");
@@ -146,6 +149,15 @@ export default function Home() {
     return () => window.removeEventListener("pointerdown", greet);
   }, []);
 
+  // Flag when Clerk itself never becomes ready (adblocker, blocked scripts, bad keys)
+  useEffect(() => {
+    if (signInLoaded) {
+      setClerkStuck(false);
+      return;
+    }
+    const id = setTimeout(() => setClerkStuck(true), 5000);
+    return () => clearTimeout(id);
+  }, [signInLoaded]);
   // Clerk session -> operator tag. Drives post-login routing exactly once per flow.
   const authFlow = useRef(false);
   useEffect(() => {
@@ -244,6 +256,7 @@ export default function Home() {
       clickSfx();
       authFlow.current = true;
       pendingStart.current = m;
+      setAuthMode("signin");
       setAuthStep("email");
       setAuthMsg("LOGIN REQUIRED TO PLAY");
       setScreen("auth");
@@ -255,16 +268,25 @@ export default function Home() {
     return (err?.errors?.[0]?.message ?? "AUTH FAILED").toUpperCase();
   };
 
+  const clerkCode = (e: unknown): string => {
+    const err = e as { errors?: Array<{ code?: string }> };
+    return err?.errors?.[0]?.code ?? "";
+  };
+
   const sendCode = async (e: React.FormEvent) => {
     e.preventDefault();
     if (authBusy || !signInLoaded || !signIn) return;
     setAuthBusy(true);
     setAuthMsg("");
+    setAuthMode("signin");
+    const email = authEmail.trim();
     try {
-      await signIn.create({ identifier: authEmail.trim() });
-      const factor = (signIn.supportedFirstFactors as unknown as Array<{ strategy: string; emailAddressId?: string }> | undefined)?.find(
-        (f) => f.strategy === "email_code"
-      );
+      await signIn.create({ identifier: email });
+      const factor = (
+        signIn.supportedFirstFactors as unknown as
+          | Array<{ strategy: string; emailAddressId?: string }>
+          | undefined
+      )?.find((f) => f.strategy === "email_code");
       if (!factor?.emailAddressId) {
         setAuthMsg("EMAIL CODE UNAVAILABLE");
         setAuthBusy(false);
@@ -274,25 +296,52 @@ export default function Home() {
       setAuthStep("code");
       setAuthMsg("CODE SENT — CHECK EMAIL");
     } catch (err) {
-      setAuthMsg(clerkErr(err));
+      // Brand-new address with no account yet -> switch to the sign-UP flow.
+      if (clerkCode(err) === "form_identifier_not_found" && signUpLoaded && signUp) {
+        try {
+          await signUp.create({ emailAddress: email });
+          await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
+          setAuthMode("signup");
+          setAuthStep("code");
+          setAuthMsg("ACCOUNT CREATED — CODE SENT, CHECK EMAIL");
+        } catch (err2) {
+          setAuthMsg(clerkErr(err2));
+        }
+      } else {
+        setAuthMsg(clerkErr(err));
+      }
     }
     setAuthBusy(false);
   };
 
   const confirmCode = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (authBusy || !signInLoaded || !signIn || !setActive) return;
+    if (authBusy) return;
     setAuthBusy(true);
     setAuthMsg("");
     try {
-      const res = await signIn.attemptFirstFactor({ strategy: "email_code", code: authCode.trim() });
-      if (res.status === "complete") {
-        authFlow.current = true;
-        setAuthCode("");
-        await setActive({ session: res.createdSessionId });
-        // The session effect routes to tag-claim or straight into the game.
+      if (authMode === "signup") {
+        if (!signUpLoaded || !signUp || !setActiveUp) return;
+        const res = await signUp.attemptEmailAddressVerification({ code: authCode.trim() });
+        if (res.status === "complete") {
+          authFlow.current = true;
+          setAuthCode("");
+          await setActiveUp({ session: res.createdSessionId });
+          // The session effect routes to tag-claim or straight into the game.
+        } else {
+          setAuthMsg("CHECK CODE AND RETRY");
+        }
       } else {
-        setAuthMsg("CHECK CODE AND RETRY");
+        if (!signInLoaded || !signIn || !setActive) return;
+        const res = await signIn.attemptFirstFactor({ strategy: "email_code", code: authCode.trim() });
+        if (res.status === "complete") {
+          authFlow.current = true;
+          setAuthCode("");
+          await setActive({ session: res.createdSessionId });
+          // The session effect routes to tag-claim or straight into the game.
+        } else {
+          setAuthMsg("CHECK CODE AND RETRY");
+        }
       }
     } catch (err) {
       setAuthMsg(clerkErr(err));
@@ -301,19 +350,28 @@ export default function Home() {
   };
 
   const googleLogin = async () => {
-    if (!signInLoaded || !signIn) return;
+    if (!signInLoaded || !signIn) {
+      setAuthMsg("AUTH STILL LOADING — WAIT A MOMENT OR RELOAD");
+      return;
+    }
     clickSfx();
+    setAuthMsg("");
     authFlow.current = true;
     try {
       sessionStorage.setItem("mathrec-pending", pendingStart.current ?? "");
     } catch {
       /* ignore */
     }
-    await signIn.authenticateWithRedirect({
-      strategy: "oauth_google",
-      redirectUrl: "/sso-callback",
-      redirectUrlComplete: "/",
-    });
+    try {
+      await signIn.authenticateWithRedirect({
+        strategy: "oauth_google",
+        redirectUrl: "/sso-callback",
+        redirectUrlComplete: "/",
+      });
+    } catch (err) {
+      authFlow.current = false;
+      setAuthMsg(clerkErr(err));
+    }
   };
 
   const saveTag = async (e: React.FormEvent) => {
@@ -685,6 +743,7 @@ export default function Home() {
                     onClick={() => {
                       clickSfx();
                       pendingStart.current = null;
+                      setAuthMode("signin");
                       setAuthStep("email");
                       setAuthMsg("");
                       setScreen("auth");
@@ -910,9 +969,11 @@ export default function Home() {
                   </div>
                   <button
                     onClick={googleLogin}
-                    className="mt-4 flex w-full items-center justify-center gap-3 rounded-xl border border-cyber-border bg-cyber-surface/80 px-5 py-3.5 font-display text-base font-bold tracking-[0.2em] text-white transition hover:border-cyber-cyan/70 hover:shadow-glowcyan active:scale-[0.99]"
+                    disabled={!signInLoaded}
+                    className="mt-4 flex w-full items-center justify-center gap-3 rounded-xl border border-cyber-border bg-cyber-surface/80 px-5 py-3.5 font-display text-base font-bold tracking-[0.2em] text-white transition hover:border-cyber-cyan/70 hover:shadow-glowcyan active:scale-[0.99] disabled:opacity-50"
                   >
-                    <span className="font-mono text-lg font-bold text-cyber-cyan">G</span> CONTINUE WITH GOOGLE
+                    <span className="font-mono text-lg font-bold text-cyber-cyan">G</span>{" "}
+                    {signInLoaded ? "CONTINUE WITH GOOGLE" : "LOADING AUTH…"}
                   </button>
                   <button
                     onClick={() => {
@@ -988,6 +1049,11 @@ export default function Home() {
                       {authBusy ? "REGISTERING…" : "DEPLOY →"}
                     </button>
                   </form>
+                )}
+                {clerkStuck && !signInLoaded && (
+                  <p className="mt-4 font-mono text-xs tracking-[0.2em] text-crimson">
+                    AUTH SERVICE UNREACHABLE — DISABLE ADBLOCKER, CHECK CONNECTION, THEN RELOAD
+                  </p>
                 )}
                 {authMsg && (
                   <p className={`mt-4 font-mono text-xs tracking-[0.2em] ${authMsg.includes("SENT") || authMsg.includes("PICK") ? "text-mint" : "text-amber"}`}>
